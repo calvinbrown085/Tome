@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Tome
 
-@Suite("TokenStore single-flight refresh", .serialized)
+@Suite("TokenStore single-flight refresh")
 struct TokenRefreshTests {
 
     private static func makeSession() -> URLSession {
@@ -15,11 +15,16 @@ struct TokenRefreshTests {
         KeychainStore(service: "BrownGames.Tome.Test.\(UUID().uuidString)")
     }
 
+    private static func uniqueHost() -> (host: String, baseURL: URL) {
+        let host = "test-\(UUID().uuidString.lowercased()).example"
+        return (host, URL(string: "https://\(host)")!)
+    }
+
     @Test("Five concurrent 401s collapse to a single /auth/refresh call")
     func collapsesConcurrent401s() async throws {
-        let baseURL = URL(string: "https://abs.example.com")!
+        let (host, baseURL) = Self.uniqueHost()
 
-        MockURLProtocol.reset { request in
+        MockURLProtocol.register(host: host) { request in
             let path = request.url?.path ?? ""
             if path == "/auth/refresh" {
                 let body = #"{"access_token":"new-access","refresh_token":"new-refresh"}"#.data(using: .utf8)!
@@ -33,7 +38,10 @@ struct TokenRefreshTests {
         }
 
         let keychain = Self.uniqueKeychain()
-        defer { Task { await TokenRefreshTests.cleanup(keychain) } }
+        defer {
+            MockURLProtocol.unregister(host: host)
+            Task { await TokenRefreshTests.cleanup(keychain) }
+        }
 
         let tokenStore = TokenStore(keychain: keychain)
         try await tokenStore.save(tokens: .init(accessToken: "old-access", refreshToken: "old-refresh"))
@@ -61,7 +69,7 @@ struct TokenRefreshTests {
             #expect(succeeded == 5, "all 5 concurrent calls should succeed after refresh")
         }
 
-        let captured = MockURLProtocol.capturedRequests()
+        let captured = MockURLProtocol.capturedRequests(host: host)
         let refreshCalls = captured.filter { $0.url?.path == "/auth/refresh" }
         let retriedWithNew = captured.filter {
             ($0.url?.path ?? "").hasPrefix("/api") &&
@@ -82,9 +90,9 @@ struct TokenRefreshTests {
 
     @Test("A failed refresh propagates and clears credentials")
     func failedRefreshClearsCredentials() async throws {
-        let baseURL = URL(string: "https://abs.example.com")!
+        let (host, baseURL) = Self.uniqueHost()
 
-        MockURLProtocol.reset { request in
+        MockURLProtocol.register(host: host) { request in
             let path = request.url?.path ?? ""
             if path == "/auth/refresh" {
                 return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data())
@@ -93,7 +101,10 @@ struct TokenRefreshTests {
         }
 
         let keychain = Self.uniqueKeychain()
-        defer { Task { await TokenRefreshTests.cleanup(keychain) } }
+        defer {
+            MockURLProtocol.unregister(host: host)
+            Task { await TokenRefreshTests.cleanup(keychain) }
+        }
 
         let tokenStore = TokenStore(keychain: keychain)
         try await tokenStore.save(tokens: .init(accessToken: "old-access", refreshToken: "old-refresh"))

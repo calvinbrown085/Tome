@@ -8,6 +8,8 @@ struct TomeApp: App {
         WindowGroup {
             RootView()
                 .environment(dependencies)
+                .preferredColorScheme(.dark)
+                .tint(TomePalette.ember)
         }
     }
 }

@@ -16,155 +16,141 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            backgroundLayer
+            TomeMoodyBackground()
             ScrollView {
                 content
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 32)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 32)
+                    .padding(.bottom, 24)
                     .frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-    }
-
-    private var backgroundLayer: some View {
-        LinearGradient(
-            colors: [
-                Color(.systemIndigo).opacity(0.55),
-                Color(.systemPurple).opacity(0.45),
-                Color(.systemTeal).opacity(0.35),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-        .overlay(
-            RadialGradient(
-                colors: [Color.white.opacity(0.18), .clear],
-                center: .top,
-                startRadius: 20,
-                endRadius: 420
-            )
-            .ignoresSafeArea()
-        )
+        .foregroundStyle(TomePalette.ink0)
+        .tint(TomePalette.ember)
     }
 
     private var content: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 18) {
             header
-            formCard
+                .padding(.bottom, 8)
+            field(.server, label: "Server", placeholder: "https://your-server.com",
+                  text: $serverURL, keyboard: .URL, contentType: .URL, submit: .next)
+            field(.username, label: "Username", placeholder: "you",
+                  text: $username, keyboard: .default, contentType: .username, submit: .next)
+            secureField(.password, label: "Password", text: $password)
             errorRow
             submitButton
+                .padding(.top, 4)
             footer
         }
     }
 
     private var header: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "books.vertical.fill")
-                .font(.system(size: 56, weight: .light))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
-            Text("Tome")
-                .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                .foregroundStyle(.white)
-            Text("Sign in to your AudiobookShelf server")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
-                .multilineTextAlignment(.center)
-        }
-        .padding(.top, 16)
-    }
+        VStack(spacing: 14) {
+            ListeningTLogo(size: 72)
+                .shadow(color: TomePalette.ember.opacity(0.4), radius: 28, y: 16)
+                .shadow(color: .black.opacity(0.55), radius: 14, y: 8)
+                .padding(.top, 8)
 
-    private var formCard: some View {
-        GlassEffectContainer(spacing: 12) {
-            VStack(spacing: 12) {
-                fieldRow(
-                    icon: "server.rack",
-                    placeholder: "https://abs.example.com",
-                    text: $serverURL,
-                    contentType: .URL,
-                    keyboard: .URL,
-                    submitLabel: .next,
-                    field: .server
-                )
-                fieldRow(
-                    icon: "person",
-                    placeholder: "Username",
-                    text: $username,
-                    contentType: .username,
-                    keyboard: .default,
-                    submitLabel: .next,
-                    field: .username
-                )
-                secureRow(
-                    icon: "lock",
-                    placeholder: "Password",
-                    text: $password,
-                    field: .password
-                )
-            }
+            Text("Tome")
+                .font(.tomeSerif(44, weight: .medium))
+                .italic()
+                .tracking(-0.5)
+                .foregroundStyle(TomePalette.ink0)
+
+            Text("For your Audiobookshelf library.")
+                .font(.subheadline)
+                .tracking(0.3)
+                .foregroundStyle(TomePalette.ink2)
         }
     }
 
     @ViewBuilder
-    private func fieldRow(
-        icon: String,
+    private func field(
+        _ field: Field,
+        label: String,
         placeholder: String,
         text: Binding<String>,
-        contentType: UITextContentType,
         keyboard: UIKeyboardType,
-        submitLabel: SubmitLabel,
-        field: Field
+        contentType: UITextContentType,
+        submit: SubmitLabel
     ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-            TextField(placeholder, text: text)
+        VStack(alignment: .leading, spacing: 6) {
+            TomeFieldLabel(text: label)
+                .padding(.leading, 4)
+            TextField("", text: text, prompt: placeholderText(placeholder))
                 .textContentType(contentType)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(keyboard)
-                .submitLabel(submitLabel)
+                .submitLabel(submit)
                 .focused($focusedField, equals: field)
                 .onSubmit { advanceFocus(from: field) }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .font(.system(size: 15))
+                .foregroundStyle(TomePalette.ink0)
+                .background(fieldBackground(focused: focusedField == field))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .glassEffect()
     }
 
     @ViewBuilder
-    private func secureRow(icon: String, placeholder: String, text: Binding<String>, field: Field) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-            SecureField(placeholder, text: text)
+    private func secureField(_ field: Field, label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TomeFieldLabel(text: label)
+                .padding(.leading, 4)
+            SecureField("", text: text, prompt: placeholderText("••••••••"))
                 .textContentType(.password)
                 .submitLabel(.go)
                 .focused($focusedField, equals: field)
                 .onSubmit { Task { await submit() } }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .font(.system(size: 15))
+                .foregroundStyle(TomePalette.ink0)
+                .background(fieldBackground(focused: focusedField == field))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .glassEffect()
+    }
+
+    private func fieldBackground(focused: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(TomePalette.ink0.opacity(0.05))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(focused ? TomePalette.ember : TomePalette.hairline2, lineWidth: 1)
+            )
+            .animation(.snappy(duration: 0.15), value: focused)
+    }
+
+    private func placeholderText(_ s: String) -> Text {
+        Text(s).foregroundStyle(TomePalette.ink3)
     }
 
     @ViewBuilder
     private var errorRow: some View {
         if let inlineError {
-            Text(inlineError)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .glassEffect(.regular.tint(.red.opacity(0.6)))
-                .transition(.opacity.combined(with: .move(edge: .top)))
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(TomePalette.ember)
+                Text(inlineError)
+                    .font(.callout)
+                    .foregroundStyle(TomePalette.ink1)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(TomePalette.ember.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(TomePalette.ember.opacity(0.3), lineWidth: 0.5)
+            )
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
@@ -172,28 +158,31 @@ struct LoginView: View {
         Button {
             Task { await submit() }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 if isSubmitting {
-                    ProgressView().tint(.white)
+                    ProgressView()
+                        .tint(TomePalette.bg0)
+                        .controlSize(.small)
                 }
-                Text(isSubmitting ? "Signing in…" : "Sign In")
-                    .font(.body.weight(.semibold))
+                Text(isSubmitting ? "Connecting…" : "Open the shelf")
             }
-            .frame(maxWidth: .infinity, minHeight: 32)
         }
-        .buttonStyle(.glassProminent)
-        .controlSize(.large)
+        .buttonStyle(TomeEmberButtonStyle())
         .disabled(!canSubmit || isSubmitting)
+        .opacity(!canSubmit && !isSubmitting ? 0.55 : 1)
         .animation(.snappy, value: isSubmitting)
         .animation(.snappy, value: canSubmit)
     }
 
     private var footer: some View {
-        Text("Your credentials are stored on this device only.")
-            .font(.caption)
-            .foregroundStyle(.white.opacity(0.7))
-            .multilineTextAlignment(.center)
-            .padding(.top, 8)
+        HStack(spacing: 6) {
+            Text("Need a server?")
+                .foregroundStyle(TomePalette.ink3)
+            Text("Set up Audiobookshelf →")
+                .foregroundStyle(TomePalette.gold)
+        }
+        .font(.system(size: 12))
+        .padding(.top, 18)
     }
 
     private var canSubmit: Bool {

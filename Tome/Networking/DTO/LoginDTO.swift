@@ -10,7 +10,7 @@ nonisolated struct LoginResponseDTO: Decodable, Sendable {
         let id: String
         let username: String
         let type: String?
-        let token: String?
+        let token: String
     }
 
     let user: User

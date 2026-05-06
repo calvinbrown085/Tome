@@ -52,4 +52,23 @@ nonisolated struct APIRequest: Sendable {
             requiresAuth: requiresAuth
         )
     }
+
+    /// Encodes the body without key conversion. Use this for ABS endpoints
+    /// that consume camelCase keys (e.g. `/api/items/:id/play`, session sync/close).
+    static func jsonCamelCase<T: Encodable & Sendable>(
+        path: String,
+        method: Method = .POST,
+        body: T,
+        requiresAuth: Bool = true
+    ) throws -> APIRequest {
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(body)
+        return APIRequest(
+            path: path,
+            method: method,
+            body: data,
+            contentType: "application/json",
+            requiresAuth: requiresAuth
+        )
+    }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 actor ABSClient {
     private let session: URLSession
@@ -34,6 +35,108 @@ actor ABSClient {
 
     // MARK: - Endpoints
 
+    // MARK: - Library
+
+    func listLibraries() async throws -> [LibraryDTO] {
+        let response: LibrariesResponseDTO = try await perform(APIRequest(path: "/api/libraries"))
+        return response.libraries
+    }
+
+    func libraryItems(
+        libraryID: String,
+        limit: Int = 50,
+        page: Int = 0,
+        sort: String? = nil,
+        desc: Bool? = nil,
+        filter: String? = nil,
+        minified: Bool = true
+    ) async throws -> PaginatedDTO<LibraryItemDTO> {
+        var query: [URLQueryItem] = [
+            .init(name: "limit", value: String(limit)),
+            .init(name: "page", value: String(page))
+        ]
+        if minified { query.append(.init(name: "minified", value: "1")) }
+        if let sort { query.append(.init(name: "sort", value: sort)) }
+        if let desc { query.append(.init(name: "desc", value: desc ? "1" : "0")) }
+        if let filter { query.append(.init(name: "filter", value: filter)) }
+        return try await perform(APIRequest(path: "/api/libraries/\(libraryID)/items", query: query))
+    }
+
+    func librarySeries(
+        libraryID: String,
+        limit: Int = 50,
+        page: Int = 0,
+        sort: String? = nil,
+        desc: Bool? = nil
+    ) async throws -> PaginatedDTO<SeriesDTO> {
+        var query: [URLQueryItem] = [
+            .init(name: "limit", value: String(limit)),
+            .init(name: "page", value: String(page))
+        ]
+        if let sort { query.append(.init(name: "sort", value: sort)) }
+        if let desc { query.append(.init(name: "desc", value: desc ? "1" : "0")) }
+        return try await perform(APIRequest(path: "/api/libraries/\(libraryID)/series", query: query))
+    }
+
+    func libraryItem(id: String, expanded: Bool = true, includeProgress: Bool = true) async throws -> LibraryItemDTO {
+        var query: [URLQueryItem] = []
+        if expanded { query.append(.init(name: "expanded", value: "1")) }
+        if includeProgress { query.append(.init(name: "include", value: "progress")) }
+        return try await perform(APIRequest(path: "/api/items/\(id)", query: query))
+    }
+
+    func author(id: String, libraryID: String? = nil, includeItems: Bool = true) async throws -> AuthorDTO {
+        var query: [URLQueryItem] = []
+        if includeItems { query.append(.init(name: "include", value: "items")) }
+        if let libraryID { query.append(.init(name: "library", value: libraryID)) }
+        return try await perform(APIRequest(path: "/api/authors/\(id)", query: query))
+    }
+
+    func search(libraryID: String, query: String, limit: Int = 12) async throws -> SearchResultDTO {
+        let q: [URLQueryItem] = [
+            .init(name: "q", value: query),
+            .init(name: "limit", value: String(limit))
+        ]
+        return try await perform(APIRequest(path: "/api/libraries/\(libraryID)/search", query: q))
+    }
+
+    func coverArtData(itemID: String) async throws -> Data {
+        try await performData(APIRequest(path: "/api/items/\(itemID)/cover"))
+    }
+
+    // MARK: - Playback sessions
+
+    func openPlaybackSession(
+        itemID: String,
+        deviceInfo: PlaySessionDeviceInfoDTO?,
+        forceDirectPlay: Bool = true,
+        supportedMimeTypes: [String] = ["audio/mpeg", "audio/mp4", "audio/aac", "audio/flac", "audio/ogg", "audio/x-m4a", "audio/x-m4b"]
+    ) async throws -> PlaybackSessionDTO {
+        let body = PlaySessionRequestDTO(
+            deviceInfo: deviceInfo,
+            forceDirectPlay: forceDirectPlay,
+            forceTranscode: false,
+            supportedMimeTypes: supportedMimeTypes,
+            mediaPlayer: "AVPlayer"
+        )
+        let request = try APIRequest.jsonCamelCase(path: "/api/items/\(itemID)/play", method: .POST, body: body)
+        return try await perform(request)
+    }
+
+    func syncPlaybackSession(id: String, currentTime: Double, timeListened: Double, duration: Double) async throws {
+        let body = PlaySessionSyncRequestDTO(currentTime: currentTime, timeListened: timeListened, duration: duration)
+        let request = try APIRequest.jsonCamelCase(path: "/api/session/\(id)/sync", method: .POST, body: body)
+        try await perform(request)
+    }
+
+    func closePlaybackSession(id: String, currentTime: Double, timeListened: Double, duration: Double) async throws {
+        let body = PlaySessionSyncRequestDTO(currentTime: currentTime, timeListened: timeListened, duration: duration)
+        let request = try APIRequest.jsonCamelCase(path: "/api/session/\(id)/close", method: .POST, body: body)
+        try await perform(request)
+    }
+
+    // MARK: - Auth
+
     func login(serverURL: URL, username: String, password: String) async throws -> LoginResponseDTO {
         self.baseURL = serverURL
         let request = try APIRequest.json(
@@ -43,11 +146,7 @@ actor ABSClient {
             requiresAuth: false
         )
         let response: LoginResponseDTO = try await perform(request)
-        guard let access = response.resolvedAccessToken(),
-              let refresh = response.refreshToken else {
-            throw APIError.decoding(message: "login response missing tokens")
-        }
-        try await tokenStore.save(tokens: .init(accessToken: access, refreshToken: refresh))
+        try await tokenStore.save(tokens: .init(accessToken: response.user.token, refreshToken: response.user.token))
         try await tokenStore.saveServerURL(serverURL.absoluteString)
         try await tokenStore.saveUsername(username)
         return response
@@ -80,6 +179,7 @@ actor ABSClient {
 
     func perform<T: Decodable & Sendable>(_ request: APIRequest) async throws -> T {
         let data = try await performRaw(request)
+        
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
@@ -91,6 +191,10 @@ actor ABSClient {
         _ = try await performRaw(request)
     }
 
+    func performData(_ request: APIRequest) async throws -> Data {
+        try await performRaw(request)
+    }
+
     private func performRaw(_ request: APIRequest) async throws -> Data {
         guard let baseURL else { throw APIError.invalidURL }
 
@@ -99,6 +203,7 @@ actor ABSClient {
 
         let (data, response) = try await dataTask(for: urlRequest)
         let http = try httpResponse(response)
+        Log.net.debug("\(request.method.rawValue, privacy: .public) \(request.path, privacy: .public) → \(http.statusCode, privacy: .public)")
 
         if http.statusCode == 401 && request.requiresAuth {
             let newToken = try await tokenStore.forceRefresh()
